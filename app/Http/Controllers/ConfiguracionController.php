@@ -8,6 +8,7 @@ use JWTAuth;
 
 use App\Http\Requests;
 use App\Models\Configuracion;
+use App\Models\Proveedor;
 use App\Models\Usuario;
 use Illuminate\Support\Facades\Input;
 use \Validator,\Hash, \Response, \DB, \PDF, \Storage, \ZipArchive;
@@ -26,6 +27,8 @@ class ConfiguracionController extends Controller
 
         $configuracion = Configuracion::where('clues',$usuario_token->get('clues'))->first();
 
+        $proveedores = Proveedor::all();
+
         if($configuracion->lista_base_id){
             $empresa = $configuracion->empresa_clave;
             $configuracion->load(['cuadroBasico'=>function($query)use($empresa){
@@ -33,7 +36,7 @@ class ConfiguracionController extends Controller
                             }]);
         }
         
-        return Response::json([ 'data' => $configuracion ],200);
+        return Response::json([ 'data' => $configuracion, 'proveedores' => $proveedores ],200);
     }
 
     /**

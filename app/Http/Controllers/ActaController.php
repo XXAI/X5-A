@@ -10,6 +10,7 @@ use App\Http\Requests;
 use App\Models\Acta;
 use App\Models\Requisicion;
 use App\Models\Configuracion;
+use App\Models\Proveedor;
 use App\Models\Usuario;
 use App\Models\ConfiguracionAplicacion;
 use JWTAuth;
@@ -218,6 +219,8 @@ class ActaController extends Controller
 
     		$configuracion = Configuracion::where('clues',$usuario->get('clues'))->first();
 
+            $proveedores = Proveedor::all();
+
             if($configuracion->lista_base_id){
                 $empresa = $configuracion->empresa_clave;
                 $configuracion->load(['cuadroBasico'=>function($query)use($empresa){
@@ -233,7 +236,7 @@ class ActaController extends Controller
                         $query->orderBy('lote'); 
                     }
                 ])->find($id);
-            return Response::json([ 'data' => $acta, 'configuracion'=>$configuracion, 'captura_habilitada'=>$captura_habilitada->valor ], 200);
+            return Response::json([ 'data' => $acta, 'configuracion'=>$configuracion, 'proveedores'=>$proveedores, 'captura_habilitada'=>$captura_habilitada->valor ], 200);
         }catch(Exception $ex){
             return Response::json(['error'=>$ex->getMessage()],500);
         }
