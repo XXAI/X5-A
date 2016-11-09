@@ -173,8 +173,9 @@ trait SyncTrait{
             $acta_central->clues                        = $datos_acta['clues'];
             $acta_central->ciudad                       = $datos_acta['ciudad'];
             $acta_central->fecha                        = $datos_acta['fecha'];
-            $acta_central->fecha_validacion             = $datos_acta['fecha_validacion'];
+            $acta_central->fecha_solicitud              = $datos_acta['fecha_validacion'];
             $acta_central->fecha_pedido                 = $datos_acta['fecha_pedido'];
+            $acta_central->fecha_termino                = $datos_acta['fecha_pedido'];
             $acta_central->hora_inicio                  = $datos_acta['hora_inicio'];
             $acta_central->hora_termino                 = $datos_acta['hora_termino'];
             $acta_central->lugar_reunion                = $datos_acta['lugar_reunion'];
@@ -189,6 +190,10 @@ trait SyncTrait{
             $acta_central->numero                       = $datos_acta['numero'];
             $acta_central->created_at                   = $datos_acta['created_at'];
             $acta_central->updated_at                   = $datos_acta['updated_at'];
+            $acta_central->total_claves_validadas       = $datos_acta['total_claves_validadas'];
+            $acta_central->total_claves_recibidas       = $datos_acta['total_claves_recibidas'];
+            $acta_central->total_cantidad_validada      = $datos_acta['total_cantidad_validada'];
+            $acta_central->total_cantidad_recibida      = $datos_acta['total_cantidad_recibida'];
             $acta_central->sincronizado_termino         = $stamp_sincronizado;
             $acta_central->sincronizado_validacion      = $stamp_sincronizado;
 

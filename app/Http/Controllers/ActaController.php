@@ -1253,14 +1253,14 @@ class ActaController extends Controller
                     return Response::json(['error' => 'Esta opción no esta disponible por el momento.', 'error_type'=>'data_validation'], HttpResponse::HTTP_CONFLICT);
                 }
                 
-                if(!$acta->numero){
+                /*if(!$acta->numero){
                     $max_acta = Acta::where('folio','like',$configuracion->clues.'/%')->max('numero');
                     if(!$max_acta){
                         $max_acta = 0;
                     }
                     $inputs['folio'] = $configuracion->clues . '/'.($max_acta+1).'/' . date('Y');
                     $inputs['numero'] = ($max_acta+1);
-                }
+                }*/
                 
                 $inputs['estatus'] = 4;
 
@@ -1291,7 +1291,7 @@ class ActaController extends Controller
                         return Response::json(['error' => $v->errors(), 'error_type'=>'form_validation'], HttpResponse::HTTP_CONFLICT);
                     }
 
-                    if($acta->estatus > 1 && !isset($inputs_requisicion['numero'])){
+                    /*if($acta->estatus > 1 && !isset($inputs_requisicion['numero'])){
                         $actas = Acta::where('folio','like',$configuracion->clues.'/%')->lists('id');
                         $max_requisicion = Requisicion::whereIn('acta_id',$actas)->max('numero');
                         if(!$max_requisicion){
@@ -1299,7 +1299,7 @@ class ActaController extends Controller
                         }
                         $inputs_requisicion['numero'] = $max_requisicion+1;
                         $inputs_requisicion['estatus'] = 1;
-                    }
+                    }*/
                     
                     $inputs_requisicion['sub_total_validado'] = $inputs_requisicion['sub_total'];
                     $inputs_requisicion['gran_total_validado'] = $inputs_requisicion['gran_total'];
@@ -1458,7 +1458,7 @@ class ActaController extends Controller
 
             DB::commit();
 
-            $datos_usuario = Usuario::find($usuario->get('id'));
+            /*$datos_usuario = Usuario::find($usuario->get('id'));
             if($datos_usuario->tipo_conexion){
                 if($acta->estatus > 1){
                     $resultado = $this->actualizarCentral($acta->folio);
@@ -1467,9 +1467,9 @@ class ActaController extends Controller
                         return Response::json(['error' => 'Error al intentar sincronizar el acta', 'error_type' => 'data_validation', 'message'=>$resultado['message'],'data'=>$acta], HttpResponse::HTTP_CONFLICT);
                     }
                 }
-            }
-
-            $acta->load('requisiciones.insumos');
+            }*/
+            $acta = Acta::with('requisiciones.insumos')->find($id);
+            //$acta->load('requisiciones.insumos');
             return Response::json([ 'data' => $acta, 'respuesta_code' =>'updated' ],200);
 
         } catch (\Exception $e) {
@@ -1480,6 +1480,8 @@ class ActaController extends Controller
 
     public function sincronizar($id){
         try {
+            return Response::json(['error' => 'Sincronización deshabilitada.', 'error_type' => 'data_validation'], HttpResponse::HTTP_CONFLICT);
+            /*
             $usuario = JWTAuth::parseToken()->getPayload();
             $datos_usuario = Usuario::find($usuario->get('id'));
             if($datos_usuario->tipo_conexion){
@@ -1498,6 +1500,7 @@ class ActaController extends Controller
             }else{
                 return Response::json(['error' => 'Su usuario no esta cofigurado para realizar la sincronización', 'error_type' => 'data_validation', 'message'=>'Usuario offline'], HttpResponse::HTTP_CONFLICT);
             }
+            */
         } catch (\Exception $e) {
             return Response::json(['error' => $e->getMessage(), 'line' => $e->getLine()], HttpResponse::HTTP_CONFLICT);
         }

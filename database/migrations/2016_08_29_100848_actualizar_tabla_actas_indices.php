@@ -13,7 +13,7 @@ class ActualizarTablaActasIndices extends Migration
     public function up()
     {
         Schema::table('actas', function (Blueprint $table) {
-            $table->unique('folio','actas_folio_unique');
+            $table->index('folio');
         });
     }
 
@@ -25,7 +25,7 @@ class ActualizarTablaActasIndices extends Migration
     public function down()
     {
         Schema::table('actas', function (Blueprint $table) {
-            $table->dropUnique('actas_folio_unique');
+            $table->dropIndex('folio');
         });
     }
 }
