@@ -45,6 +45,7 @@ Route::group(['middleware' => 'jwt'], function () {
     Route::post('importar-zip-unidad',                  'RequisicionesUnidadController@importar');
     Route::get('sincronizar-validacion/{id}',           'ActaController@sincronizar');
     Route::get('exportar-csv-unidad/{id}',              'RequisicionesUnidadController@generarJSON');
+    Route::get('generar-folios',                        'ActaController@generarFolios');
 
     //Excel
     Route::get('acta-excel/{id}',                       'ActaController@generarExcel');
