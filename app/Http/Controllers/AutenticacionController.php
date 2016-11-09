@@ -82,10 +82,14 @@ class AutenticacionController extends Controller
                     return response()->json(['error' => 'Error al iniciar sesión, datos de configuración no encontrados para este usuario.'], 401); 
                 }
                 
+                /*
+                if($usuario->tipo_usuario == 2){
+                    $permisos = $permisos_jurisdiccion;
+                }
+                */
+
                 if($usuario->tipo_usuario == 1){
                     $permisos = $permisos_unidad;
-                }elseif($usuario->tipo_usuario == 2){
-                    $permisos = $permisos_jurisdiccion;
                 }else{
                     $permisos = $permisos_hospital;
                 }
