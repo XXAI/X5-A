@@ -12,6 +12,8 @@ use App\Models\Requisicion;
 use App\Models\Configuracion;
 use App\Models\Proveedor;
 use App\Models\Usuario;
+use App\Models\Entrada;
+use App\Models\StockInsumo;
 use App\Models\ConfiguracionAplicacion;
 use JWTAuth;
 use Illuminate\Support\Facades\Input;
@@ -93,10 +95,13 @@ class ActaController extends Controller
 
         $reglas_acta = [
             'ciudad'            =>'required',
-            'fecha'             =>'required',
+            'fecha'             =>'required|date',
+            'fecha_validacion'  =>'required|date',
+            'fecha_pedido'      =>'required|date',
             'hora_inicio'       =>'required',
             'hora_termino'      =>'required',
             'lugar_reunion'     =>'required',
+            'proveedor_id'      =>'required',
             //'firma_solicita'    =>'required',
             //'cargo_solicita'    =>'required',
             'requisiciones'     =>'required|array|min:1'
@@ -175,9 +180,14 @@ class ActaController extends Controller
                         //$iva = 0;
                         foreach ($inputs_requisicion['insumos'] as $req_insumo) {
                             $insumos[] = [
-                                'insumo_id' => $req_insumo['insumo_id'],
-                                'cantidad' => $req_insumo['cantidad'],
-                                'total' => $req_insumo['total']
+                                'insumo_id'         => $req_insumo['insumo_id'],
+                                'cantidad'          => $req_insumo['cantidad'],
+                                'total'             => $req_insumo['total'],
+                                'cantidad_validada' => $req_insumo['cantidad'],
+                                'total_validado'    => $req_insumo['total'],
+                                'cantidad_recibida' => $req_insumo['cantidad'],
+                                'total_recibido'    => $req_insumo['total'],
+                                'proveedor_id'      => $inputs['proveedor_id']
                             ];
                         }
                         $requisicion->insumos()->sync($insumos);
@@ -381,7 +391,7 @@ class ActaController extends Controller
         $data['unidad'] = mb_strtoupper($configuracion->clues_nombre,'UTF-8');
         $data['empresa'] = $configuracion->empresa_nombre;
         $data['empresa_clave'] = $configuracion->empresa_clave;
-/*
+        /*
         $pdf = PDF::loadView('pdf.requisiciones', $data);
         $pdf->output();
         $dom_pdf = $pdf->getDomPDF();
@@ -598,7 +608,7 @@ class ActaController extends Controller
                             $sheet->setColumnFormat(array(
                                 "F8:G$contador_filas" => '"$"#,##0.00_-'
                             ));
-/*
+                            /*
                             $sheet->mergeCells('A1:G1');
                             $sheet->row(1, array('PROVEEDOR DESIGNADO: '.mb_strtoupper($pedido_proveedor['proveedor'],'UTF-8')));
 
@@ -1186,10 +1196,13 @@ class ActaController extends Controller
 
         $reglas_acta = [
             'ciudad'            =>'required',
-            'fecha'             =>'required',
+            'fecha'             =>'required|date',
+            'fecha_validacion'  =>'required|date',
+            'fecha_pedido'      =>'required|date',
             'hora_inicio'       =>'required',
             'hora_termino'      =>'required',
             'lugar_reunion'     =>'required',
+            'proveedor_id'      =>'required',
             'requisiciones'     =>'required|array|min:1'
         ];
 
@@ -1225,10 +1238,10 @@ class ActaController extends Controller
                 throw new \Exception("El Acta no se puede editar ya que se encuentra con estatus de finalizada");
             }
 
-            $inputs['lugar_entrega'] = $configuracion->lugar_entrega;
-            $inputs['director_unidad'] = $configuracion->director_unidad;
-            $inputs['administrador'] = $configuracion->administrador;
-            $inputs['encargado_almacen'] = $configuracion->encargado_almacen;
+            $inputs['lugar_entrega']               = $configuracion->lugar_entrega;
+            $inputs['director_unidad']             = $configuracion->director_unidad;
+            $inputs['administrador']               = $configuracion->administrador;
+            $inputs['encargado_almacen']           = $configuracion->encargado_almacen;
             $inputs['coordinador_comision_abasto'] = $configuracion->coordinador_comision_abasto;
 
             if($inputs['estatus'] == 2 && $acta->estatus != 2){
@@ -1240,12 +1253,16 @@ class ActaController extends Controller
                     return Response::json(['error' => 'Esta opción no esta disponible por el momento.', 'error_type'=>'data_validation'], HttpResponse::HTTP_CONFLICT);
                 }
                 
-                $max_acta = Acta::where('folio','like',$configuracion->clues.'/%')->max('numero');
-                if(!$max_acta){
-                    $max_acta = 0;
+                if(!$acta->numero){
+                    $max_acta = Acta::where('folio','like',$configuracion->clues.'/%')->max('numero');
+                    if(!$max_acta){
+                        $max_acta = 0;
+                    }
+                    $inputs['folio'] = $configuracion->clues . '/'.($max_acta+1).'/' . date('Y');
+                    $inputs['numero'] = ($max_acta+1);
                 }
-                $inputs['folio'] = $configuracion->clues . '/'.($max_acta+1).'/' . date('Y');
-                $inputs['numero'] = ($max_acta+1);
+                
+                $inputs['estatus'] = 4;
 
                 $v = Validator::make($inputs, $reglas_configuracion, $mensajes);
                 if ($v->fails()) {
@@ -1263,6 +1280,8 @@ class ActaController extends Controller
 
                 $acta->load('requisiciones');
                 $requisiciones_guardadas = [];
+                $total_claves = 0;
+                $total_lotes = 0;
                 foreach ($inputs['requisiciones'] as $inputs_requisicion) {
                     $inputs_requisicion['dias_surtimiento'] = 15;
                     //$inputs_requisicion['firma_director'] = $configuracion->director_unidad;
@@ -1272,16 +1291,22 @@ class ActaController extends Controller
                         return Response::json(['error' => $v->errors(), 'error_type'=>'form_validation'], HttpResponse::HTTP_CONFLICT);
                     }
 
-                    /*
-                    if($acta->estatus == 2 && !isset($inputs_requisicion['numero'])){
+                    if($acta->estatus > 1 && !isset($inputs_requisicion['numero'])){
                         $actas = Acta::where('folio','like',$configuracion->clues.'/%')->lists('id');
                         $max_requisicion = Requisicion::whereIn('acta_id',$actas)->max('numero');
                         if(!$max_requisicion){
                             $max_requisicion = 0;
                         }
                         $inputs_requisicion['numero'] = $max_requisicion+1;
+                        $inputs_requisicion['estatus'] = 1;
                     }
-                    */
+                    
+                    $inputs_requisicion['sub_total_validado'] = $inputs_requisicion['sub_total'];
+                    $inputs_requisicion['gran_total_validado'] = $inputs_requisicion['gran_total'];
+                    $inputs_requisicion['iva_validado'] = $inputs_requisicion['iva'];
+                    $inputs_requisicion['sub_total_recibido'] = $inputs_requisicion['sub_total'];
+                    $inputs_requisicion['gran_total_recibido'] = $inputs_requisicion['gran_total'];
+                    $inputs_requisicion['iva_recibido'] = $inputs_requisicion['iva'];
 
                     if(isset($inputs_requisicion['id'])){
                         $requisicion = Requisicion::find($inputs_requisicion['id']);
@@ -1297,9 +1322,14 @@ class ActaController extends Controller
                         $insumos = [];
                         foreach ($inputs_requisicion['insumos'] as $req_insumo) {
                             $insumos[] = [
-                                'insumo_id' => $req_insumo['insumo_id'],
-                                'cantidad' => $req_insumo['cantidad'],
-                                'total' => $req_insumo['total']
+                                'insumo_id'         => $req_insumo['insumo_id'],
+                                'cantidad'          => $req_insumo['cantidad'],
+                                'total'             => $req_insumo['total'],
+                                'cantidad_validada' => $req_insumo['cantidad'],
+                                'total_validado'    => $req_insumo['total'],
+                                'cantidad_recibida' => $req_insumo['cantidad'],
+                                'total_recibido'    => $req_insumo['total'],
+                                'proveedor_id'      => $inputs['proveedor_id']
                             ];
                         }
                         $requisicion->insumos()->sync([]);
@@ -1314,13 +1344,15 @@ class ActaController extends Controller
                         }
                         $requisicion->gran_total = $sub_total + $requisicion->iva;
                         $requisicion->save();
+
+                        $total_claves += count($insumos);
+                        $total_lotes += $requisicion->insumos()->sum('requisicion_insumo.cantidad');
                     }else{
                         $requisicion->insumos()->sync([]);
                         $requisicion->sub_total = 0;
                         $requisicion->iva = 0;
                         $requisicion->gran_total = 0;
                         $requisicion->save();
-
                     }
                 }
                 $eliminar_requisiciones = [];
@@ -1335,16 +1367,105 @@ class ActaController extends Controller
                 }
             }
 
+            if($acta->estatus > 3){
+                $acta->total_claves_validadas = $total_claves;
+                $acta->total_claves_recibidas = $total_claves;
+                $acta->total_cantidad_validada = $total_lotes;
+                $acta->total_cantidad_recibida = $total_lotes;
+                $acta->save();
+
+                $acta->load('entradas','requisiciones.insumos');
+
+                if(count($acta->entradas)){
+                    $entrada = $acta->entradas[0];
+                }else{
+                    $entrada = new Entrada();
+                }
+
+                $entrada->proveedor_id              = $inputs['entrada']['proveedor_id'];
+                $entrada->fecha_recibe              = $inputs['entrada']['fecha_recibe'];
+                $entrada->hora_recibe               = $inputs['entrada']['hora_recibe'];
+                $entrada->nombre_recibe             = $inputs['entrada']['nombre_recibe'];
+                $entrada->nombre_entrega            = $inputs['entrada']['nombre_entrega'];
+                if(isset($inputs['entrada']['observaciones'])){
+                    $entrada->observaciones         = $inputs['entrada']['observaciones'];
+                }
+                $entrada->estatus                   = 2;
+                $entrada->total_claves_recibidas    = $total_claves;
+                $entrada->total_claves_validadas    = $total_claves;
+                $entrada->total_cantidad_recibida   = $total_lotes;
+                $entrada->total_cantidad_validada   = $total_lotes;
+                $entrada->porcentaje_claves         = 100;
+                $entrada->porcentaje_cantidad       = 100;
+
+                $acta->entradas()->save($entrada);
+
+                $entrada->load('stock');
+                $stock_guardado = [];
+                foreach ($entrada->stock as $stock) {
+                    if(!isset($stock_guardado[$stock->insumo_id])){
+                        $stock_guardado[$stock->insumo_id] = [];
+                    }
+                    $stock_guardado[$stock->insumo_id][] = $stock;
+                }
+
+                $guardar_stock = [];
+                $eliminar_stock = [];
+                $cantidades_insumos = [];
+                $conteo_lotes = 1;
+
+                for($i = 0, $total_requisiciones = count($acta->requisiciones); $i < $total_requisiciones; $i++){
+                    $requisicion = $acta->requisiciones[$i];
+                    if(count($requisicion->insumos)){
+                        for ($j=0, $total_insumos = count($requisicion->insumos); $j < $total_insumos ; $j++){
+                            $insumo = $requisicion->insumos[$j];
+
+                            if(isset($stock_guardado[$insumo->id][0])){
+                                $nuevo_ingreso = $stock_guardado[$insumo->id][0];
+                            }else{
+                                $nuevo_ingreso = new StockInsumo();
+                            }
+
+                            $nuevo_ingreso->clues               = $configuracion->clues;
+                            $nuevo_ingreso->insumo_id           = $insumo->id;
+                            $nuevo_ingreso->lote                = $conteo_lotes;
+                            $nuevo_ingreso->fecha_caducidad     = NULL;
+                            $nuevo_ingreso->cantidad_recibida   = $insumo->pivot->cantidad;
+                            $nuevo_ingreso->stock               = 1; //Stock activo = 1, inactivo = null
+                            $nuevo_ingreso->usado               = 0;
+                            $nuevo_ingreso->disponible          = $insumo->pivot->cantidad;
+
+                            $guardar_stock[$insumo->id] = $nuevo_ingreso;
+                            $conteo_lotes++;
+                        }
+                    }
+                }
+
+                foreach ($stock_guardado as $insumo_id => $stock) {
+                    if(!isset($guardar_stock[$insumo_id])){
+                        $eliminar_stock[] = $stock[0]->id;
+                    }
+                }
+
+                if(count($eliminar_stock)){
+                    StockInsumo::whereIn('id',$eliminar_stock)->delete();
+                }
+
+                if(count($guardar_stock)){
+                    $entrada->stock()->saveMany($guardar_stock);
+                }
+            }
+
             DB::commit();
 
             $datos_usuario = Usuario::find($usuario->get('id'));
             if($datos_usuario->tipo_conexion){
-                if($acta->estatus == 2){
+                if($acta->estatus > 1){
                     $resultado = $this->actualizarCentral($acta->folio);
-                    if(!$resultado['estatus']){
-                        return Response::json(['error' => 'Error al intentar sincronizar el acta', 'error_type' => 'data_validation', 'message'=>$resultado['message']], HttpResponse::HTTP_CONFLICT);
-                    }
                     $acta = Acta::find($id);
+                    if(!$resultado['estatus']){
+                        return Response::json(['error' => 'Error al intentar sincronizar el acta', 'error_type' => 'data_validation', 'message'=>$resultado['message'],'data'=>$acta], HttpResponse::HTTP_CONFLICT);
+                    }
                 }
             }
 
@@ -1366,7 +1487,7 @@ class ActaController extends Controller
                 if(!$acta){
                     return Response::json(['error' => 'Acta no encontrada.', 'error_type' => 'data_validation'], HttpResponse::HTTP_CONFLICT);
                 }
-                if($acta->estatus == 2){
+                if($acta->estatus > 1){
                     $resultado = $this->actualizarCentral($acta->folio);
                     if(!$resultado['estatus']){
                         return Response::json(['error' => 'Error al intentar sincronizar el acta', 'error_type' => 'data_validation', 'message'=>$resultado['message']], HttpResponse::HTTP_CONFLICT);
