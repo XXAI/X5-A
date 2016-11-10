@@ -67,6 +67,7 @@ class ActaController extends Controller
             $recurso = $recurso->with('requisiciones')
                                 ->skip(($pagina-1)*$elementos_por_pagina)->take($elementos_por_pagina)
                                 ->orderBy('estatus','asc')
+                                ->orderBy('numero')
                                 ->orderBy('created_at','desc')
                                 ->get();
 
@@ -587,23 +588,58 @@ class ActaController extends Controller
     }
 
     public function generarFolios(){
-        $actas = Acta::orderBy('fecha')->orderBy('hora_termino')->get();
-        $folios_clues = [];
-        foreach ($actas as $acta) {
-            $folio_array = explode('/', $acta->folio);
-            $clues = $folio_array[0];
-            //$numero = 1;
-            if(!isset($folios_clues[$clues])){
-                $folios_clues[$clues] = 1;
-            }else{
-                $folios_clues[$clues] += 1;
+        try{
+            DB::enableQueryLog();
+            DB::beginTransaction();
+
+            $actas = Acta::with(['requisiciones'=>function($query){
+                $query->orderBy('tipo_requisicion');
+            }])->orderBy('fecha')->orderBy('hora_termino')->get();
+
+            $folios_clues = [];
+            $numeros_requisiciones_clues = [];
+
+            foreach ($actas as $acta) {
+                $folio_array = explode('/', $acta->folio);
+                $clues = $folio_array[0];
+                
+                if(!isset($folios_clues[$clues])){
+                    $folios_clues[$clues] = 1;
+                }else{
+                    $folios_clues[$clues] += 1;
+                }
+
+                $numero = $folios_clues[$clues];
+                
+                $acta->numero = $numero;
+                $acta->folio = $clues . '/'.$numero.'/' . date('Y');
+                $acta->save();
+
+                if(!isset($numeros_requisiciones_clues[$clues])){
+                    $numeros_requisiciones_clues[$clues] = 1;
+                }
+                $numero_requisicion = $numeros_requisiciones_clues[$clues];
+
+                foreach ($acta->requisiciones as $requisicion) {
+                    $requisicion->numero = $numero_requisicion;
+                    $numero_requisicion += 1;
+                    $requisicion->save();
+                }
+                $numeros_requisiciones_clues[$clues] = $numero_requisicion;
             }
-            $numero = $folios_clues[$clues];
-            $acta->numero = $numero;
-            $acta->folio = $clues . '/'.$numero.'/' . date('Y');
-            $acta->save();
+
+            DB::commit();
+
+            return Response::json(['data'=>$folios_clues],200);
+        }catch(Exception $e){
+            //$conexion_remota->rollback();
+            $queries = DB::getQueryLog();
+            $last_query = end($queries);
+            
+            DB::rollBack();
+            return ['message'=>$e->getMessage(),'line'=>$e->getLine(),'extra_data'=>$last_query];
+            //return Response::json(['error' => $e->getMessage(), 'line' => $e->getLine()], HttpResponse::HTTP_CONFLICT);
         }
-        return Response::json(['data'=>$folios_clues],200);
     }
 
     /**
