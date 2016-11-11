@@ -630,6 +630,11 @@ class ActaController extends Controller
 
             DB::commit();
 
+            $resultado = $this->actualizarCentral();
+            if(!$resultado['estatus']){
+                return Response::json(['error' => 'Error al intentar sincronizar el acta', 'error_type' => 'data_validation', 'message'=>$resultado['message'], 'line'=>$resultado['line']], HttpResponse::HTTP_CONFLICT);
+            }
+
             return Response::json(['data'=>$folios_clues],200);
         }catch(Exception $e){
             //$conexion_remota->rollback();

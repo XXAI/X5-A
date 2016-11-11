@@ -147,7 +147,8 @@ trait SyncTrait{
             //$acta_local = Acta::with('requisiciones.insumos','requisiciones.insumosClues','entradas.stock')->where('folio',$folio)->first();
 
             //para sincronizacion completa
-            $actas_locales = Acta::with('requisiciones.insumos','requisiciones.insumosClues','entradas.stock')->orderBy('numero')->get();
+            $actas_locales = Acta::with('requisiciones.insumos','requisiciones.insumosClues','entradas.stock')
+                                    ->orderBy('fecha')->orderBy('hora_termino')->get();
 
             $default = DB::getPdo(); // Default conn
             $secondary = DB::connection('mysql_sync')->getPdo();
@@ -177,22 +178,25 @@ trait SyncTrait{
 
                 $acta_central = new Acta();
                 $acta_central = $acta_central->setConnection('mysql_sync');
-                $acta_central = $acta_central->where('folio',$folio)->first();
+                $acta_central = $acta_central->where('folio',$datos_acta['folio'])->first();
 
                 if(!$acta_central){
                     $acta_central = new Acta();
                 }
 
                 $max_oficio += 1;
+                $max_oficio_requisicion += 1; //Suponiendo que sea un proveedor por aca, que hasta el momento asi es
 
                 $acta_central->folio                        = $datos_acta['folio'];
                 $acta_central->clues                        = $datos_acta['clues'];
                 $acta_central->ciudad                       = $datos_acta['ciudad'];
                 $acta_central->fecha                        = $datos_acta['fecha'];
                 $acta_central->num_oficio                   = $max_oficio;
+                $acta_central->num_oficio_pedido            = $max_oficio_requisicion;
                 $acta_central->fecha_solicitud              = $datos_acta['fecha_validacion'];
                 $acta_central->fecha_pedido                 = $datos_acta['fecha_pedido'];
                 $acta_central->fecha_termino                = $datos_acta['fecha_pedido'];
+                $acta_central->fecha_validacion             = $datos_acta['fecha_validacion'];
                 $acta_central->hora_inicio                  = $datos_acta['hora_inicio'];
                 $acta_central->hora_termino                 = $datos_acta['hora_termino'];
                 $acta_central->lugar_reunion                = $datos_acta['lugar_reunion'];
@@ -216,6 +220,26 @@ trait SyncTrait{
 
                 if($acta_central->save()){
                     $acta_central->load('requisiciones');
+
+                    $acta_proveedor = DB::table('acta_proveedor')->where('acta_id',$acta_central->id)->get();
+                    if(count($acta_proveedor)){
+                        DB::table('acta_proveedor')->where('acta_id',$acta_central->id)->update(
+                                [
+                                    'acta_id'=>$acta_central->id,
+                                    'proveedor_id'=>$datos_acta['requisiciones'][0]['insumos'][0]['pivot']['proveedor_id'],
+                                    'num_oficio'=>$max_oficio_requisicion
+                                ]
+                            );
+                    }else{
+                        DB::table('acta_proveedor')->insert(
+                                [
+                                    'acta_id'=>$acta_central->id,
+                                    'proveedor_id'=>$datos_acta['requisiciones'][0]['insumos'][0]['pivot']['proveedor_id'],
+                                    'num_oficio'=>$max_oficio_requisicion
+                                ]
+                            );
+                    }
+                    
                     $eliminar_requisiciones = [];
                     $requisiciones_central = [];
                     $requisiciones_guardadas = [];
@@ -223,61 +247,61 @@ trait SyncTrait{
                         $requisiciones_guardadas[$requisicion->tipo_requisicion] = $requisicion;
                     }
 
-                    foreach ($acta_local->requisiciones as $requisicion) {
-                        if(isset($requisiciones_guardadas[$requisicion->tipo_requisicion])){
-                            $requisicion_central = $requisiciones_guardadas[$requisicion->tipo_requisicion];
+                    foreach ($datos_acta['requisiciones'] as $requisicion) {
+                        if(isset($requisiciones_guardadas[$requisicion['tipo_requisicion']])){
+                            $requisicion_central = $requisiciones_guardadas[$requisicion['tipo_requisicion']];
                         }else{
                             $requisicion_central = new Requisicion();
                         }
 
-                        $requisicion_central->pedido                = $requisicion->pedido;
-                        $requisicion_central->lotes                 = $requisicion->lotes;
-                        $requisicion_central->numero                = $requisicion->numero;
-                        $requisicion_central->tipo_requisicion      = $requisicion->tipo_requisicion;
-                        $requisicion_central->dias_surtimiento      = $requisicion->dias_surtimiento;
-                        $requisicion_central->sub_total             = $requisicion->sub_total;
-                        $requisicion_central->gran_total            = $requisicion->gran_total;
-                        $requisicion_central->iva                   = $requisicion->iva;
-                        $requisicion_central->sub_total_validado    = $requisicion->sub_total_validado;
-                        $requisicion_central->gran_total_validado   = $requisicion->gran_total_validado;
-                        $requisicion_central->iva_validado          = $requisicion->iva_validado;
-                        $requisicion_central->sub_total_recibido    = $requisicion->sub_total_recibido;
-                        $requisicion_central->gran_total_recibido   = $requisicion->gran_total_recibido;
-                        $requisicion_central->iva_recibido          = $requisicion->iva_recibido;
+                        $requisicion_central->pedido                = $requisicion['pedido'];
+                        $requisicion_central->lotes                 = $requisicion['lotes'];
+                        $requisicion_central->numero                = $requisicion['numero'];
+                        $requisicion_central->tipo_requisicion      = $requisicion['tipo_requisicion'];
+                        $requisicion_central->dias_surtimiento      = $requisicion['dias_surtimiento'];
+                        $requisicion_central->sub_total             = $requisicion['sub_total'];
+                        $requisicion_central->gran_total            = $requisicion['gran_total'];
+                        $requisicion_central->iva                   = $requisicion['iva'];
+                        $requisicion_central->sub_total_validado    = $requisicion['sub_total_validado'];
+                        $requisicion_central->gran_total_validado   = $requisicion['gran_total_validado'];
+                        $requisicion_central->iva_validado          = $requisicion['iva_validado'];
+                        $requisicion_central->sub_total_recibido    = $requisicion['sub_total_recibido'];
+                        $requisicion_central->gran_total_recibido   = $requisicion['gran_total_recibido'];
+                        $requisicion_central->iva_recibido          = $requisicion['iva_recibido'];
                         $requisicion_central->estatus               = 1;
-                        $requisicion_central->created_at            = $requisicion->created_at;
-                        $requisicion_central->updated_at            = $requisicion->updated_at;
+                        $requisicion_central->created_at            = $requisicion['created_at'];
+                        $requisicion_central->updated_at            = $requisicion['updated_at'];
 
                         $acta_central->requisiciones()->save($requisicion_central);
 
                         $insumos = [];
-                        foreach ($requisicion->insumos as $req_insumo) {
+                        foreach ($requisicion['insumos'] as $req_insumo) {
                             $insumos[] = [
-                                'insumo_id'         => $req_insumo->id,
-                                'cantidad'          => $req_insumo->pivot->cantidad,
-                                'total'             => $req_insumo->pivot->total,
-                                'cantidad_validada' => $req_insumo->pivot->cantidad_validada,
-                                'total_validado'    => $req_insumo->pivot->total_validado,
-                                'cantidad_recibida' => $req_insumo->pivot->cantidad_recibida,
-                                'total_recibido'    => $req_insumo->pivot->total_recibido,
-                                'proveedor_id'      => $req_insumo->pivot->proveedor_id
+                                'insumo_id'         => $req_insumo['id'],
+                                'cantidad'          => $req_insumo['pivot']['cantidad'],
+                                'total'             => $req_insumo['pivot']['total'],
+                                'cantidad_validada' => $req_insumo['pivot']['cantidad_validada'],
+                                'total_validado'    => $req_insumo['pivot']['total_validado'],
+                                'cantidad_recibida' => $req_insumo['pivot']['cantidad_recibida'],
+                                'total_recibido'    => $req_insumo['pivot']['total_recibido'],
+                                'proveedor_id'      => $req_insumo['pivot']['proveedor_id']
                             ];
                         }
                         $requisicion_central->insumos()->sync([]);
                         $requisicion_central->insumos()->sync($insumos);
 
                         $insumos = [];
-                        foreach ($requisicion->insumosClues as $req_insumo) {
+                        foreach ($requisicion['insumos_clues'] as $req_insumo) {
                             $insumos[] = [
-                                'insumo_id'             => $req_insumo->id,
-                                'clues'                 => $req_insumo->pivot->clues,
-                                'cantidad'              => $req_insumo->pivot->cantidad,
-                                'total'                 => $req_insumo->pivot->total,
-                                'cantidad_validada'     => $req_insumo->pivot->cantidad_validada,
-                                'total_validado'        => $req_insumo->pivot->total_validado,
-                                'cantidad_recibida'     => $req_insumo->pivot->cantidad_recibida,
-                                'total_recibido'        => $req_insumo->pivot->total_recibido,
-                                'requisicion_id_unidad' => $req_insumo->pivot->requisicion_id_unidad
+                                'insumo_id'             => $req_insumo['id'],
+                                'clues'                 => $req_insumo['pivot']['clues'],
+                                'cantidad'              => $req_insumo['pivot']['cantidad'],
+                                'total'                 => $req_insumo['pivot']['total'],
+                                'cantidad_validada'     => $req_insumo['pivot']['cantidad_validada'],
+                                'total_validado'        => $req_insumo['pivot']['total_validado'],
+                                'cantidad_recibida'     => $req_insumo['pivot']['cantidad_recibida'],
+                                'total_recibido'        => $req_insumo['pivot']['total_recibido'],
+                                'requisicion_id_unidad' => $req_insumo['pivot']['requisicion_id_unidad']
                             ];
                         }
                         $requisicion_central->insumosClues()->sync([]);
@@ -286,6 +310,8 @@ trait SyncTrait{
                         $requisiciones_central[$requisicion_central->tipo_requisicion] = true;
 
                         //Guardar numero de oficio de requisiciones...
+                        //$max_oficio_requisicion += 1;
+                        //es un proveedor por acta
                     }
 
                     foreach ($acta_central->requisiciones as $requisicion) {
@@ -300,7 +326,7 @@ trait SyncTrait{
 
                     $acta_central->load('entradas.stock');
 
-                    $entrada_local = $acta_local->entradas[0];
+                    $entrada_local = $datos_acta['entradas'][0];
 
                     if(count($acta_central->entradas)){
                         $entrada_central = $acta_central->entradas[0];
@@ -308,20 +334,20 @@ trait SyncTrait{
                         $entrada_central = new Entrada();
                     }
 
-                    $entrada_central->proveedor_id              = $entrada_local->proveedor_id;
-                    $entrada_central->fecha_recibe              = $entrada_local->fecha_recibe;
-                    $entrada_central->hora_recibe               = $entrada_local->hora_recibe;
-                    $entrada_central->observaciones             = $entrada_local->observaciones;
-                    $entrada_central->nombre_recibe             = $entrada_local->nombre_recibe;
-                    $entrada_central->nombre_entrega            = $entrada_local->nombre_entrega;
+                    $entrada_central->proveedor_id              = $entrada_local['proveedor_id'];
+                    $entrada_central->fecha_recibe              = $entrada_local['fecha_recibe'];
+                    $entrada_central->hora_recibe               = $entrada_local['hora_recibe'];
+                    $entrada_central->observaciones             = $entrada_local['observaciones'];
+                    $entrada_central->nombre_recibe             = $entrada_local['nombre_recibe'];
+                    $entrada_central->nombre_entrega            = $entrada_local['nombre_entrega'];
                     
-                    $entrada_central->total_cantidad_recibida   = $entrada_local->total_cantidad_recibida;
-                    $entrada_central->total_cantidad_validada   = $entrada_local->total_cantidad_validada;
-                    $entrada_central->total_claves_recibidas    = $entrada_local->total_claves_recibidas;
-                    $entrada_central->total_claves_validadas    = $entrada_local->total_claves_validadas;
+                    $entrada_central->total_cantidad_recibida   = $entrada_local['total_cantidad_recibida'];
+                    $entrada_central->total_cantidad_validada   = $entrada_local['total_cantidad_validada'];
+                    $entrada_central->total_claves_recibidas    = $entrada_local['total_claves_recibidas'];
+                    $entrada_central->total_claves_validadas    = $entrada_local['total_claves_validadas'];
 
-                    $entrada_central->porcentaje_cantidad       = $entrada_local->porcentaje_cantidad;
-                    $entrada_central->porcentaje_claves         = $entrada_local->porcentaje_claves;
+                    $entrada_central->porcentaje_cantidad       = $entrada_local['porcentaje_cantidad'];
+                    $entrada_central->porcentaje_claves         = $entrada_local['porcentaje_claves'];
                     $entrada_central->estatus                   = 3;
 
                     $acta_central->entradas()->save($entrada_central);
@@ -334,22 +360,22 @@ trait SyncTrait{
 
                     $guardar_stock = [];
                     //Se agrega el stock entregado
-                    foreach ($entrada_local->stock as $ingreso) {
-                        if(isset($stock_guardado[$ingreso->insumo_id.'|'.$ingreso->lote])){
-                            $nuevo_ingreso = $stock_guardado[$ingreso->insumo_id.'|'.$ingreso->lote];
+                    foreach ($entrada_local['stock'] as $ingreso) {
+                        if(isset($stock_guardado[$ingreso['insumo_id'].'|'.$ingreso['lote']])){
+                            $nuevo_ingreso = $stock_guardado[$ingreso['insumo_id'].'|'.$ingreso['lote']];
                             $stock_central[$nuevo_ingreso->id] = true;
                         }else{
                             $nuevo_ingreso = new StockInsumo();
                         }
 
-                        $nuevo_ingreso->clues               = $ingreso->clues;
-                        $nuevo_ingreso->insumo_id           = $ingreso->insumo_id;
-                        $nuevo_ingreso->lote                = $ingreso->lote;
-                        $nuevo_ingreso->fecha_caducidad     = $ingreso->fecha_caducidad;
-                        $nuevo_ingreso->cantidad_recibida   = $ingreso->cantidad_recibida;
-                        $nuevo_ingreso->stock               = $ingreso->stock;
-                        $nuevo_ingreso->usado               = $ingreso->usado;
-                        $nuevo_ingreso->disponible          = $ingreso->disponible;
+                        $nuevo_ingreso->clues               = $ingreso['clues'];
+                        $nuevo_ingreso->insumo_id           = $ingreso['insumo_id'];
+                        $nuevo_ingreso->lote                = $ingreso['lote'];
+                        $nuevo_ingreso->fecha_caducidad     = $ingreso['fecha_caducidad'];
+                        $nuevo_ingreso->cantidad_recibida   = $ingreso['cantidad_recibida'];
+                        $nuevo_ingreso->stock               = $ingreso['stock'];
+                        $nuevo_ingreso->usado               = $ingreso['usado'];
+                        $nuevo_ingreso->disponible          = $ingreso['disponible'];
 
                         $guardar_stock[] = $nuevo_ingreso;
                     }
@@ -357,8 +383,8 @@ trait SyncTrait{
 
                     $eliminar_stock = [];
                     foreach ($entrada_central->stock as $ingreso) {
-                        if(!isset($stock_central[$ingreso->id])){
-                            $eliminar_stock[] = $ingreso->id;
+                        if(!isset($stock_central[$ingreso['id']])){
+                            $eliminar_stock[] = $ingreso['id'];
                         }
                     }
 
@@ -374,14 +400,19 @@ trait SyncTrait{
             DB::commit();
             DB::setPdo($default);
 
-            $acta_local->estatus_sincronizacion     = 3;
-            $acta_local->sincronizado_termino       = $stamp_sincronizado;
-            $acta_local->sincronizado_validacion    = $stamp_sincronizado;
-            $acta_local->save();
+            DB::beginTransaction();
+            for ($index = 0, $total_actas = count($actas_locales); $index < $total_actas ; $index++) {
+                $acta_local = $actas_locales[$index];
+                $acta_local->estatus_sincronizacion     = 3;
+                $acta_local->sincronizado_termino       = $stamp_sincronizado;
+                $acta_local->sincronizado_validacion    = $stamp_sincronizado;
+                $acta_local->save();
 
-            $entrada_local = $acta_local->entradas[0];
-            $entrada_local->estatus = 3;
-            $entrada_local->save();
+                $entrada_local = $acta_local->entradas[0];
+                $entrada_local->estatus = 3;
+                $entrada_local->save();
+            }
+            DB::commit();
 
             return ['estatus'=>true];
             //return Response::json(['acta_central'=>$acta_central,'acta_central'=>$acta_central],200);
@@ -389,7 +420,7 @@ trait SyncTrait{
             //$conexion_remota->rollback();
             DB::rollBack();
             DB::setPdo($default);
-            return ['estatus'=>false,'message'=>$e->getMessage()];
+            return ['estatus'=>false,'message'=>$e->getMessage(), 'line'=>$e->getLine()];
             //return Response::json(['error' => $e->getMessage(), 'line' => $e->getLine()], HttpResponse::HTTP_CONFLICT);
         }
     }
