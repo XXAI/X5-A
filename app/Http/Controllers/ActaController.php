@@ -91,7 +91,8 @@ class ActaController extends Controller
             'array'         => "array",
             'min'           => "min",
             'unique'        => "unique",
-            'date'          => "date"
+            'date'          => "date",
+            'before'        => "before"
         ];
 
         $reglas_acta = [
@@ -122,8 +123,12 @@ class ActaController extends Controller
         ];
 
         $inputs = Input::all();
-        //$inputs = Input::only('id','servidor_id','password','nombre', 'apellidos');
-        //var_dump(json_encode($inputs));die;
+        $usuario = JWTAuth::parseToken()->getPayload();
+
+        $configuracion = Configuracion::where('clues',$usuario->get('clues'))->first();
+        if($configuracion->empresa_clave == 'disur'){
+            $reglas_acta['fecha'] .= '|before:"2016-10-11 00:00:00"';
+        }
 
         $v = Validator::make($inputs, $reglas_acta, $mensajes);
         if ($v->fails()) {
@@ -135,9 +140,7 @@ class ActaController extends Controller
             DB::beginTransaction();
 
             //$max_acta = Acta::max('id');
-            $usuario = JWTAuth::parseToken()->getPayload();
-            $configuracion = Configuracion::where('clues',$usuario->get('clues'))->first();
-
+            
             $inputs['folio'] = $configuracion->clues . '/'.'00'.'/' . date('Y');
             $inputs['estatus'] = 1;
             $inputs['empresa'] = $configuracion->empresa_clave;
