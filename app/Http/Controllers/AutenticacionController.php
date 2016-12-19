@@ -87,12 +87,8 @@ class AutenticacionController extends Controller
                     $permisos = $permisos_jurisdiccion;
                 }
                 */
-
-                if($usuario->tipo_usuario == 1){
-                    $permisos = $permisos_unidad;
-                }else{
-                    $permisos = $permisos_hospital;
-                }
+                $permisos = $permisos_hospital;
+                
                 $usuario->password = null;
 
                 $payload = JWTFactory::make($claims);

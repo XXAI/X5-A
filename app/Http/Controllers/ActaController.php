@@ -597,7 +597,7 @@ class ActaController extends Controller
 
             $actas = Acta::with(['requisiciones'=>function($query){
                 $query->orderBy('tipo_requisicion');
-            }])->orderBy('fecha')->orderBy('hora_termino')->get();
+            }])->orderBy('fecha')->orderBy('hora_termino')->where('estatus','>',1)->get();
 
             $folios_clues = [];
             $numeros_requisiciones_clues = [];
@@ -649,6 +649,25 @@ class ActaController extends Controller
             //return Response::json(['error' => $e->getMessage(), 'line' => $e->getLine()], HttpResponse::HTTP_CONFLICT);
         }
     }
+
+    public function copiarActas(){
+        try{
+            $resultado = $this->copiarActasCentral();
+            if(!$resultado['estatus']){
+                return Response::json(['error' => 'Error al intentar sincronizar el acta', 'error_type' => 'data_validation', 'message'=>$resultado['message'], 'line'=>$resultado['line']], HttpResponse::HTTP_CONFLICT);
+            }
+
+            return Response::json(['data'=>$resultado],200);
+        }catch(Exception $e){
+            //$conexion_remota->rollback();
+            //$queries = DB::getQueryLog();
+            //$last_query = end($queries);
+            
+            return ['message'=>$e->getMessage(),'line'=>$e->getLine()];
+            //return Response::json(['error' => $e->getMessage(), 'line' => $e->getLine()], HttpResponse::HTTP_CONFLICT);
+        }
+    }
+
 
     /**
      * Remove the specified resource from storage.
