@@ -127,7 +127,7 @@ class ActaController extends Controller
 
         $configuracion = Configuracion::where('clues',$usuario->get('clues'))->first();
         if($configuracion->empresa_clave == 'disur'){
-            $reglas_acta['fecha'] .= '|before:"2016-10-11 00:00:00"';
+            $reglas_acta['fecha'] .= '|before:"2016-11-10 00:00:00"';
         }
 
         $v = Validator::make($inputs, $reglas_acta, $mensajes);
@@ -302,6 +302,10 @@ class ActaController extends Controller
 
         $usuario = JWTAuth::parseToken()->getPayload();
         $configuracion = Configuracion::where('clues',$usuario->get('clues'))->first();
+
+        if($configuracion->empresa_clave == 'disur'){
+            $reglas_acta['fecha'] .= '|before:"2016-11-10 00:00:00"';
+        }
 
         $inputs = Input::all();
         //$inputs = Input::only('id','servidor_id','password','nombre', 'apellidos');
