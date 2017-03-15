@@ -96,6 +96,8 @@ class ActaController extends Controller
         ];
 
         $reglas_acta = [
+            //'folio'             =>'required',
+            //'numero_alt'        =>'required',
             'ciudad'            =>'required',
             'fecha'             =>'required|date',
             'fecha_validacion'  =>'required|date',
@@ -140,8 +142,12 @@ class ActaController extends Controller
             DB::beginTransaction();
 
             //$max_acta = Acta::max('id');
+            //$anio = date('Y');
+            $anio = 2016;
+
+            $inputs['folio'] = $configuracion->clues . '/'.'00'.'/' . $anio;
+            $inputs['numero'] = null;
             
-            $inputs['folio'] = $configuracion->clues . '/'.'00'.'/' . date('Y');
             $inputs['estatus'] = 1;
             $inputs['empresa'] = $configuracion->empresa_clave;
             $inputs['lugar_entrega'] = $configuracion->lugar_entrega;
@@ -594,6 +600,167 @@ class ActaController extends Controller
         }
     }
 
+    public function generarFolios(){ //Ver 2.0
+        try{
+            DB::enableQueryLog();
+            DB::beginTransaction();
+
+            $actas = Acta::with(['requisiciones'=>function($query){
+                $query->orderBy('tipo_requisicion');
+            }])->orderBy('clues')->orderBy('fecha')->orderBy('hora_termino')->get(); //->where('estatus','>',1)->whereNull('numero')->where('estatus_sincronizacion',0)
+
+            $folios_clues = []; //clues => ['folio'=>1,'alt'=>[{1},{2},{3},{4}],'gap'=>true/false]
+            $max_requisicion_clues = [];
+            //$numeros_requisiciones_clues = [];
+            $folio_anterior = [];
+
+            foreach ($actas as $acta){
+                $clues = $acta->clues;
+                if(!isset($folios_clues[$clues])){
+                    $folios_clues[$clues] = [];
+                    $max_requisicion_clues[$clues] = 0;
+                }
+
+                if($acta->numero){
+                    if(isset($folio_anterior[$clues])){
+                        if(count($folios_clues[$clues][$folio_anterior[$clues]]['actas'])){
+                            $folios_clues[$clues][$folio_anterior[$clues]]['gap'] = true;
+                        }
+                    }
+                    $folio_anterior[$clues] = $acta->numero;
+                    
+                    if(!isset($folios_clues[$clues][$acta->numero])){
+                        $max_numero_requisicion = $acta->requisiciones()->max('numero');
+                        if($max_numero_requisicion > $max_requisicion_clues[$clues]){
+                            $max_requisicion_clues[$clues] = $max_numero_requisicion;
+                        }
+                        $folios_clues[$clues][$acta->numero] = ['actas'=>[],'gap'=>false,'max_requisicion'=>$max_numero_requisicion];
+                    }
+                }else{
+                    if(!isset($folio_anterior[$clues])){
+                        $folio_anterior[$clues] = "-1";
+                        if(count($folios_clues[$clues]) == 0){
+                            $folios_clues[$clues]["-1"] = ['actas'=>[],'gap'=>false,'max_requisicion'=>0];
+                        }
+                        $folios_clues[$clues]["-1"]['actas'][] = $acta;
+                    }else{
+                        $folios_clues[$clues][$folio_anterior[$clues]]['actas'][] = $acta;
+                    }
+                }
+            }
+
+            //$guardar_actas = [];
+            foreach($folios_clues as $clues){
+                foreach($clues as $numero => $item){
+                    if(count($item['actas'])){
+                        if($numero == "-1" && $item['gap']){
+                            $numero_acta = 1;
+                            $numero_alt = 1;
+                            $numero_requisicion = intval($clues[$numero_acta]['max_requisicion']);
+                            $numero_requisicion_alt = 1;
+                        }else if($numero == "-1" && !$item['gap']){
+                            $numero_acta = 1;
+                            $numero_alt = false;
+                            $numero_requisicion = 1;
+                            $numero_requisicion_alt = false;
+                        }else if($item['gap']){
+                            if(isset($clues["-1"])){
+                                $numero_alt = count($clues["-1"]['actas'])+1;
+                            }else{
+                                $numero_alt = 1;
+                            }
+                            $numero_acta = intval($numero);
+                            $numero_requisicion = intval($item['max_requisicion']);
+                            $numero_requisicion_alt = 1;
+                        }else{
+                            $numero_acta = intval($numero)+1;
+                            $numero_alt = false;
+                            $numero_requisicion = intval($item['max_requisicion'])+1;
+                            $numero_requisicion_alt = false;
+                        }
+
+                        foreach($item['actas'] as $acta){
+                            $acta->numero = $numero_acta;
+                            if($numero_alt){
+                                $acta->numero_alt = $numero_alt;
+                                $acta->folio = $acta->clues . '/'.str_pad($numero_acta, 2, "0", STR_PAD_LEFT).'-'.$numero_alt.'/2016';
+                                $numero_alt++;
+                            }else{
+                                $acta->folio = $acta->clues . '/'.str_pad($numero_acta, 2, "0", STR_PAD_LEFT).'/2016';
+                                $numero_acta++;
+                            }
+                            $acta->save();
+
+                            foreach($acta->requisiciones as $requisicion){
+                                $requisicion->numero = $numero_requisicion;
+                                if($numero_requisicion_alt){
+                                    $requisicion->numero_alt = $numero_requisicion_alt;
+                                    $numero_requisicion_alt++;
+                                }else{
+                                    $numero_requisicion++;
+                                }
+                                $requisicion->save();
+                            }
+                        }
+                    }
+                }
+            }
+            //Acta::saveMany($guardar_actas);
+
+            /*
+            foreach ($actas as $acta) {
+                $folio_array = explode('/', $acta->folio);
+                $clues = $folio_array[0];
+                
+                if(!isset($folios_clues[$clues])){
+                    $folios_clues[$clues] = 1;
+                }else{
+                    $folios_clues[$clues] += 1;
+                }
+
+                $numero = $folios_clues[$clues];
+
+                //$anio = date('Y');
+                $anio = 2016;
+
+                $acta->numero = $numero;
+                $acta->folio = $clues . '/'.str_pad($numero, 2, "0", STR_PAD_LEFT).'/' . $anio;
+                $acta->save();
+
+                if(!isset($numeros_requisiciones_clues[$clues])){
+                    $numeros_requisiciones_clues[$clues] = 1;
+                }
+                $numero_requisicion = $numeros_requisiciones_clues[$clues];
+
+                foreach ($acta->requisiciones as $requisicion) {
+                    $requisicion->numero = $numero_requisicion;
+                    $numero_requisicion += 1;
+                    $requisicion->save();
+                }
+                $numeros_requisiciones_clues[$clues] = $numero_requisicion;
+            }
+            */
+
+            DB::commit();
+
+            $resultado = $this->actualizarCentral();
+            if(!$resultado['estatus']){
+                return Response::json(['error' => 'Error al intentar sincronizar el acta', 'error_type' => 'data_validation', 'message'=>$resultado['message'], 'line'=>$resultado['line']], HttpResponse::HTTP_CONFLICT);
+            }
+
+            return Response::json(['data'=>$folios_clues],200);
+        }catch(Exception $e){
+            //$conexion_remota->rollback();
+            $queries = DB::getQueryLog();
+            $last_query = end($queries);
+            
+            DB::rollBack();
+            return ['message'=>$e->getMessage(),'line'=>$e->getLine(),'extra_data'=>$last_query];
+            //return Response::json(['error' => $e->getMessage(), 'line' => $e->getLine()], HttpResponse::HTTP_CONFLICT);
+        }
+    }
+
+    /*
     public function generarFolios(){
         try{
             DB::enableQueryLog();
@@ -601,7 +768,7 @@ class ActaController extends Controller
 
             $actas = Acta::with(['requisiciones'=>function($query){
                 $query->orderBy('tipo_requisicion');
-            }])->orderBy('fecha')->orderBy('hora_termino')->where('estatus','>',1)->get();
+            }])->orderBy('fecha')->orderBy('hora_termino')->get(); //->where('estatus','>',1)->whereNull('numero')->where('estatus_sincronizacion',0)
 
             $folios_clues = [];
             $numeros_requisiciones_clues = [];
@@ -617,9 +784,12 @@ class ActaController extends Controller
                 }
 
                 $numero = $folios_clues[$clues];
-                
+
+                //$anio = date('Y');
+                $anio = 2016;
+
                 $acta->numero = $numero;
-                $acta->folio = $clues . '/'.$numero.'/' . date('Y');
+                $acta->folio = $clues . '/'.str_pad($numero, 2, "0", STR_PAD_LEFT).'/' . $anio;
                 $acta->save();
 
                 if(!isset($numeros_requisiciones_clues[$clues])){
@@ -653,6 +823,7 @@ class ActaController extends Controller
             //return Response::json(['error' => $e->getMessage(), 'line' => $e->getLine()], HttpResponse::HTTP_CONFLICT);
         }
     }
+    */
 
     public function copiarActas(){
         try{

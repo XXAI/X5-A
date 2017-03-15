@@ -193,7 +193,7 @@
 				<th colspan="3" width="35%" class="encabezado-tabla">DIAS DE SURTIMIENTO</th>
 			</tr>
 			<tr class="tabla-datos">
-				<td colspan="2" class="encabezado-tabla">{{$requisicion->numero}}</td>
+				<td colspan="2" class="encabezado-tabla">{{($requisicion->numero_alt)?$requisicion->numero.'-'.$requisicion->numero_alt:$requisicion->numero}}</td>
 				<td colspan="2" class="encabezado-tabla">{{$unidad}}</td>
 				<td class="encabezado-tabla">{{$requisicion->pedido}}</td>
 				<td class="encabezado-tabla">{{count($requisicion->insumos)}}</td>

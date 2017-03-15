@@ -140,15 +140,319 @@ trait SyncTrait{
         }*/
     }
 
+    public function actualizarCentral(){ //Ver 2.0
+        try{
+            //para sincronizacion completa
+            $actas_locales = Acta::with('requisiciones.insumos','requisiciones.insumosClues','entradas.stock')->where('estatus','>',1)->where('estatus_sincronizacion',0)
+                                    ->orderBy('fecha_pedido')->orderBy('numero')->get();
+
+            $default = DB::getPdo(); // Default conn
+            $secondary = DB::connection('mysql_sync')->getPdo();
+
+            $stamp_sincronizado = new DateTime();
+
+            DB::setPdo($secondary);
+            DB::beginTransaction();
+
+            //$max_oficio = Acta::max('num_oficio');
+            //if(!$max_oficio){
+            //$max_oficio = 0;
+            //$max_oficio_requisicion = 0;
+            //}
+
+            for ($index = 0, $total_actas = count($actas_locales); $index < $total_actas ; $index++) {
+                $datos_acta = $actas_locales[$index]->toArray();
+                
+                $datos_acta['empresa_clave'] = $datos_acta['empresa'];
+                $folio_array = explode('/', $datos_acta['folio']);
+                $datos_acta['clues'] = $folio_array[0];
+                $datos_acta['estatus_sincronizacion'] = 3;
+
+                $acta_central = new Acta();
+                $acta_central = $acta_central->setConnection('mysql_sync');
+                $acta_central = $acta_central->where('folio',$datos_acta['folio'])->first();
+
+                if(!$acta_central){
+                    $acta_central = new Acta();
+                }
+                
+                //$max_oficio += 1;
+                //$max_oficio_requisicion += 1;
+                
+                $acta_central->folio                        = $datos_acta['folio'];
+                $acta_central->clues                        = $datos_acta['clues'];
+                $acta_central->ciudad                       = $datos_acta['ciudad'];
+                $acta_central->fecha                        = $datos_acta['fecha'];
+                //$acta_central->num_oficio                   = $max_oficio;
+                //$acta_central->num_oficio_pedido            = $max_oficio_requisicion;
+                $acta_central->fecha_solicitud              = $datos_acta['fecha_validacion'];
+                $acta_central->fecha_pedido                 = $datos_acta['fecha_pedido'];
+                $acta_central->fecha_termino                = $datos_acta['fecha_pedido'];
+                $acta_central->fecha_validacion             = $datos_acta['fecha_validacion'];
+                $acta_central->hora_inicio                  = $datos_acta['hora_inicio'];
+                $acta_central->hora_termino                 = $datos_acta['hora_termino'];
+                $acta_central->lugar_reunion                = $datos_acta['lugar_reunion'];
+                $acta_central->lugar_entrega                = $datos_acta['lugar_entrega'];
+                $acta_central->empresa_clave                = $datos_acta['empresa_clave'];
+                $acta_central->estatus                      = $datos_acta['estatus'];
+                $acta_central->estatus_sincronizacion       = $datos_acta['estatus_sincronizacion'];
+                $acta_central->director_unidad              = $datos_acta['director_unidad'];
+                $acta_central->administrador                = $datos_acta['administrador'];
+                $acta_central->encargado_almacen            = $datos_acta['encargado_almacen'];
+                $acta_central->coordinador_comision_abasto  = $datos_acta['coordinador_comision_abasto'];
+                $acta_central->numero                       = $datos_acta['numero'];
+                $acta_central->numero_alt                   = $datos_acta['numero_alt'];
+                $acta_central->created_at                   = $datos_acta['created_at'];
+                $acta_central->updated_at                   = $datos_acta['updated_at'];
+                $acta_central->total_claves_validadas       = $datos_acta['total_claves_validadas'];
+                $acta_central->total_claves_recibidas       = $datos_acta['total_claves_recibidas'];
+                $acta_central->total_cantidad_validada      = $datos_acta['total_cantidad_validada'];
+                $acta_central->total_cantidad_recibida      = $datos_acta['total_cantidad_recibida'];
+                $acta_central->sincronizado_termino         = $stamp_sincronizado;
+                $acta_central->sincronizado_validacion      = $stamp_sincronizado;
+
+                if($acta_central->save()){
+                    $acta_central->load('requisiciones');
+
+                    /*$acta_proveedor = DB::table('acta_proveedor')->where('acta_id',$acta_central->id)->get();
+                    if(count($acta_proveedor)){
+                        DB::table('acta_proveedor')->where('acta_id',$acta_central->id)->update(
+                                [
+                                    'acta_id'=>$acta_central->id,
+                                    'proveedor_id'=>$datos_acta['requisiciones'][0]['insumos'][0]['pivot']['proveedor_id'],
+                                    'num_oficio'=>$max_oficio_requisicion
+                                ]
+                            );
+                    }else{
+                        DB::table('acta_proveedor')->insert(
+                                [
+                                    'acta_id'=>$acta_central->id,
+                                    'proveedor_id'=>$datos_acta['requisiciones'][0]['insumos'][0]['pivot']['proveedor_id'],
+                                    'num_oficio'=>$max_oficio_requisicion
+                                ]
+                            );
+                    }*/
+                    
+                    $eliminar_requisiciones = [];
+                    $requisiciones_central = [];
+                    $requisiciones_guardadas = [];
+                    foreach ($acta_central->requisiciones as $requisicion) {
+                        $requisiciones_guardadas[$requisicion->tipo_requisicion] = $requisicion;
+                    }
+
+                    foreach ($datos_acta['requisiciones'] as $requisicion) {
+                        if(isset($requisiciones_guardadas[$requisicion['tipo_requisicion']])){
+                            $requisicion_central = $requisiciones_guardadas[$requisicion['tipo_requisicion']];
+                        }else{
+                            $requisicion_central = new Requisicion();
+                        }
+
+                        $requisicion_central->pedido                = $requisicion['pedido'];
+                        $requisicion_central->lotes                 = $requisicion['lotes'];
+                        $requisicion_central->numero                = $requisicion['numero'];
+                        $requisicion_central->numero_alt            = $requisicion['numero_alt'];
+                        $requisicion_central->tipo_requisicion      = $requisicion['tipo_requisicion'];
+                        $requisicion_central->dias_surtimiento      = $requisicion['dias_surtimiento'];
+                        $requisicion_central->sub_total             = $requisicion['sub_total'];
+                        $requisicion_central->gran_total            = $requisicion['gran_total'];
+                        $requisicion_central->iva                   = $requisicion['iva'];
+                        $requisicion_central->sub_total_validado    = $requisicion['sub_total_validado'];
+                        $requisicion_central->gran_total_validado   = $requisicion['gran_total_validado'];
+                        $requisicion_central->iva_validado          = $requisicion['iva_validado'];
+                        $requisicion_central->sub_total_recibido    = $requisicion['sub_total_recibido'];
+                        $requisicion_central->gran_total_recibido   = $requisicion['gran_total_recibido'];
+                        $requisicion_central->iva_recibido          = $requisicion['iva_recibido'];
+                        $requisicion_central->estatus               = 1;
+                        $requisicion_central->created_at            = $requisicion['created_at'];
+                        $requisicion_central->updated_at            = $requisicion['updated_at'];
+
+                        $acta_central->requisiciones()->save($requisicion_central);
+
+                        $insumos = [];
+                        foreach ($requisicion['insumos'] as $req_insumo) {
+                            $insumos[] = [
+                                'insumo_id'         => $req_insumo['id'],
+                                'cantidad'          => $req_insumo['pivot']['cantidad'],
+                                'total'             => $req_insumo['pivot']['total'],
+                                'cantidad_validada' => $req_insumo['pivot']['cantidad_validada'],
+                                'total_validado'    => $req_insumo['pivot']['total_validado'],
+                                'cantidad_recibida' => $req_insumo['pivot']['cantidad_recibida'],
+                                'total_recibido'    => $req_insumo['pivot']['total_recibido'],
+                                'proveedor_id'      => $req_insumo['pivot']['proveedor_id']
+                            ];
+                        }
+                        $requisicion_central->insumos()->sync([]);
+                        $requisicion_central->insumos()->sync($insumos);
+                        
+                        $requisicion_central->insumosClues()->sync([]);
+                        
+                        $requisiciones_central[$requisicion_central->tipo_requisicion] = true;
+
+                        //Guardar numero de oficio de requisiciones...
+                        //$max_oficio_requisicion += 1;
+                        //es un proveedor por acta
+                    }
+
+                    foreach ($acta_central->requisiciones as $requisicion) {
+                        if(!isset($requisiciones_central[$requisicion->tipo_requisicion])){
+                            $eliminar_requisiciones[] = $requisicion->id;
+                        }
+                    }
+
+                    if(count($eliminar_requisiciones)){
+                        Requisicion::whereIn('id',$eliminar_requisiciones)->delete();
+                    }
+
+                    $acta_central->load('entradas.stock');
+
+                    $entrada_local = $datos_acta['entradas'][0];
+
+                    if(count($acta_central->entradas)){
+                        $entrada_central = $acta_central->entradas[0];
+                    }else{
+                        $entrada_central = new Entrada();
+                    }
+
+                    $entrada_central->proveedor_id              = $entrada_local['proveedor_id'];
+                    $entrada_central->fecha_recibe              = $entrada_local['fecha_recibe'];
+                    $entrada_central->hora_recibe               = $entrada_local['hora_recibe'];
+                    $entrada_central->observaciones             = $entrada_local['observaciones'];
+                    $entrada_central->nombre_recibe             = $entrada_local['nombre_recibe'];
+                    $entrada_central->nombre_entrega            = $entrada_local['nombre_entrega'];
+                    
+                    $entrada_central->total_cantidad_recibida   = $entrada_local['total_cantidad_recibida'];
+                    $entrada_central->total_cantidad_validada   = $entrada_local['total_cantidad_validada'];
+                    $entrada_central->total_claves_recibidas    = $entrada_local['total_claves_recibidas'];
+                    $entrada_central->total_claves_validadas    = $entrada_local['total_claves_validadas'];
+
+                    $entrada_central->porcentaje_cantidad       = $entrada_local['porcentaje_cantidad'];
+                    $entrada_central->porcentaje_claves         = $entrada_local['porcentaje_claves'];
+                    $entrada_central->estatus                   = 3;
+
+                    $acta_central->entradas()->save($entrada_central);
+
+                    $stock_guardado = [];
+                    $stock_central = [];
+                    foreach ($entrada_central->stock as $ingreso) {
+                        $stock_guardado[$ingreso->insumo_id.'|'.$ingreso->lote] = $ingreso;
+                    }
+
+                    $guardar_stock = [];
+                    //Se agrega el stock entregado
+                    foreach ($entrada_local['stock'] as $ingreso) {
+                        if(isset($stock_guardado[$ingreso['insumo_id'].'|'.$ingreso['lote']])){
+                            $nuevo_ingreso = $stock_guardado[$ingreso['insumo_id'].'|'.$ingreso['lote']];
+                            $stock_central[$nuevo_ingreso->id] = true;
+                        }else{
+                            $nuevo_ingreso = new StockInsumo();
+                        }
+
+                        $nuevo_ingreso->clues               = $ingreso['clues'];
+                        $nuevo_ingreso->insumo_id           = $ingreso['insumo_id'];
+                        $nuevo_ingreso->lote                = $ingreso['lote'];
+                        $nuevo_ingreso->fecha_caducidad     = $ingreso['fecha_caducidad'];
+                        $nuevo_ingreso->cantidad_recibida   = $ingreso['cantidad_recibida'];
+                        $nuevo_ingreso->stock               = $ingreso['stock'];
+                        $nuevo_ingreso->usado               = $ingreso['usado'];
+                        $nuevo_ingreso->disponible          = $ingreso['disponible'];
+
+                        $guardar_stock[] = $nuevo_ingreso;
+                    }
+                    $entrada_central->stock()->saveMany($guardar_stock);
+
+                    $eliminar_stock = [];
+                    foreach ($entrada_central->stock as $ingreso) {
+                        if(!isset($stock_central[$ingreso['id']])){
+                            $eliminar_stock[] = $ingreso['id'];
+                        }
+                    }
+
+                    if(count($eliminar_stock)){
+                        StockInsumo::whereIn('id',$eliminar_stock)->delete();
+                    }
+                }else{
+                    throw new Exception("Error al guardar el acta", 1);
+                }
+            }
+
+            $actas_centrales = Acta::orderBy('fecha_pedido')->orderBy('numero')->get();
+            $oficios_actas = [];
+            $oficio_activo = 0;
+            for ($index = 0, $total_actas = count($actas_centrales); $index < $total_actas ; $index++) {
+                $acta = $actas_centrales[$index];
+                if($acta->num_oficio){
+                    if(isset($oficios_actas[$oficio_activo])){
+                        if(count($oficios_actas[$oficio_activo]['actas'])){
+                            $oficios_actas[$oficio_activo]['gap'] = true;
+                        }
+                    }
+                    $oficios_actas[$acta->num_oficio] = ['actas'=>[],'gap'=>false];
+                    $oficio_activo = $acta->num_oficio;
+                }else{
+                    $oficios_actas[$oficio_activo]['actas'][] = $acta;
+                }
+            }
+
+            foreach($oficios_actas as $oficio => $item){
+                if(count($item['actas'])){
+                    if($item['gap']){
+                        $num_oficio = intval($oficio);
+                        $num_oficio_alt = 1;
+                    }else{
+                        $num_oficio = intval($oficio)+1;
+                        $num_oficio_alt = false;
+                    }
+
+                    foreach($item['actas'] as $acta){
+                        $acta->num_oficio = $num_oficio;
+                        $acta->num_oficio_pedido = $num_oficio;
+                        if($num_oficio_alt){
+                            $acta->num_oficio_alt = $num_oficio_alt;
+                            $num_oficio_alt++;
+                        }else{
+                            $num_oficio++;
+                        }
+                        $acta->save();
+                    }
+                }
+            }
+            //$conexion_remota->commit();
+            DB::commit();
+            DB::setPdo($default);
+
+            DB::beginTransaction();
+            for ($index = 0, $total_actas = count($actas_locales); $index < $total_actas ; $index++) {
+                $acta_local = $actas_locales[$index];
+                $acta_local->estatus_sincronizacion     = 3;
+                $acta_local->sincronizado_termino       = $stamp_sincronizado;
+                $acta_local->sincronizado_validacion    = $stamp_sincronizado;
+                $acta_local->save();
+
+                $entrada_local = $acta_local->entradas[0];
+                $entrada_local->estatus = 3;
+                $entrada_local->save();
+            }
+            DB::commit();
+
+            return ['estatus'=>true,'datos'=>$oficios_actas];
+            //return Response::json(['acta_central'=>$acta_central,'acta_central'=>$acta_central],200);
+        }catch(Exception $e){
+            //$conexion_remota->rollback();
+            DB::rollBack();
+            DB::setPdo($default);
+            return ['estatus'=>false,'message'=>$e->getMessage(), 'line'=>$e->getLine()];
+            //return Response::json(['error' => $e->getMessage(), 'line' => $e->getLine()], HttpResponse::HTTP_CONFLICT);
+        }
+    }
 	//public function actualizarCentral($folio){
-    public function actualizarCentral(){
+    /*public function actualizarCentral(){
         try{
             //para sincronización individual
             //$acta_local = Acta::with('requisiciones.insumos','requisiciones.insumosClues','entradas.stock')->where('folio',$folio)->first();
 
             //para sincronizacion completa
             $actas_locales = Acta::with('requisiciones.insumos','requisiciones.insumosClues','entradas.stock')->where('estatus','>',1)
-                                    ->orderBy('fecha')->orderBy('hora_termino')->get();
+                                    ->orderBy('fecha_pedido')->orderBy('numero')->get();
 
             $default = DB::getPdo(); // Default conn
             $secondary = DB::connection('mysql_sync')->getPdo();
@@ -186,16 +490,7 @@ trait SyncTrait{
                 
                 $max_oficio += 1;
                 $max_oficio_requisicion += 1;
-
-                /*if($datos_acta['empresa_clave'] == 'disur'){
-                    $max_oficio_requisicion += 1;
-                    //$acta_central->num_oficio                   = $max_oficio;
-                    $acta_central->num_oficio_pedido            = $max_oficio_requisicion;
-                }else{
-                    //$acta_central->num_oficio                   = null;
-                    $acta_central->num_oficio_pedido            = null;
-                }*/
-
+                
                 $acta_central->folio                        = $datos_acta['folio'];
                 $acta_central->clues                        = $datos_acta['clues'];
                 $acta_central->ciudad                       = $datos_acta['ciudad'];
@@ -300,24 +595,24 @@ trait SyncTrait{
                         }
                         $requisicion_central->insumos()->sync([]);
                         $requisicion_central->insumos()->sync($insumos);
-
-                        $insumos = [];
-                        foreach ($requisicion['insumos_clues'] as $req_insumo) {
-                            $insumos[] = [
-                                'insumo_id'             => $req_insumo['id'],
-                                'clues'                 => $req_insumo['pivot']['clues'],
-                                'cantidad'              => $req_insumo['pivot']['cantidad'],
-                                'total'                 => $req_insumo['pivot']['total'],
-                                'cantidad_validada'     => $req_insumo['pivot']['cantidad_validada'],
-                                'total_validado'        => $req_insumo['pivot']['total_validado'],
-                                'cantidad_recibida'     => $req_insumo['pivot']['cantidad_recibida'],
-                                'total_recibido'        => $req_insumo['pivot']['total_recibido'],
-                                'requisicion_id_unidad' => $req_insumo['pivot']['requisicion_id_unidad']
-                            ];
-                        }
+                        
+                        //$insumos = [];
+                        //foreach ($requisicion['insumos_clues'] as $req_insumo) {
+                        //    $insumos[] = [
+                        //        'insumo_id'             => $req_insumo['id'],
+                        //        'clues'                 => $req_insumo['pivot']['clues'],
+                        //        'cantidad'              => $req_insumo['pivot']['cantidad'],
+                        //        'total'                 => $req_insumo['pivot']['total'],
+                        //        'cantidad_validada'     => $req_insumo['pivot']['cantidad_validada'],
+                        //        'total_validado'        => $req_insumo['pivot']['total_validado'],
+                        //        'cantidad_recibida'     => $req_insumo['pivot']['cantidad_recibida'],
+                        //       'total_recibido'        => $req_insumo['pivot']['total_recibido'],
+                        //        'requisicion_id_unidad' => $req_insumo['pivot']['requisicion_id_unidad']
+                        //    ];
+                        //}
                         $requisicion_central->insumosClues()->sync([]);
                         $requisicion_central->insumosClues()->sync($insumos);
-
+                        
                         $requisiciones_central[$requisicion_central->tipo_requisicion] = true;
 
                         //Guardar numero de oficio de requisiciones...
@@ -434,7 +729,7 @@ trait SyncTrait{
             return ['estatus'=>false,'message'=>$e->getMessage(), 'line'=>$e->getLine()];
             //return Response::json(['error' => $e->getMessage(), 'line' => $e->getLine()], HttpResponse::HTTP_CONFLICT);
         }
-    }
+    }*/
 
     public function copiarActasCentral(){
         try{
