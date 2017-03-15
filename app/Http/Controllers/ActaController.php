@@ -880,8 +880,8 @@ class ActaController extends Controller
         
         $usuario = JWTAuth::parseToken()->getPayload();
 
-        $datos_usuario = Usuario::find($usuario->get('id'));
-        $configuracion = Configuracion::where('clues',$usuario->get('clues'))->first();
+        //$datos_usuario = Usuario::find($usuario->get('id'));
+        $configuracion = Configuracion::where('clues',$data['acta']->clues)->first();
 
         /*if($data['acta']->estatus != 2){
             return Response::json(['error' => 'No se puede generar el archivo por que el acta no se encuentra finalizada'], HttpResponse::HTTP_CONFLICT);
@@ -909,7 +909,7 @@ class ActaController extends Controller
         $data['empresa_clave'] = $configuracion->empresa_clave;
         $data['etiqueta_director'] = 'DIRECTOR DEL HOSPITAL';
 
-        if($datos_usuario->tipo_usuario == 2){
+        if($configuracion->tipo_clues == 2){
             $data['etiqueta_director'] = 'JEFE JURISDICCIONAL';
         }
         
@@ -944,8 +944,8 @@ class ActaController extends Controller
             }]);
         }
 
-        $usuario = JWTAuth::parseToken()->getPayload();
-        $configuracion = Configuracion::where('clues',$usuario->get('clues'))->first();
+        //$usuario = JWTAuth::parseToken()->getPayload();
+        $configuracion = Configuracion::where('clues',$data['acta']->clues)->first();
 
         $fecha = explode('-',$data['acta']->fecha);
         $fecha[1] = $meses[$fecha[1]];
