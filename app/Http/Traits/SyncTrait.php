@@ -141,10 +141,12 @@ trait SyncTrait{
     }
 
     public function actualizarCentral(){ //Ver 2.0
+        $default = null;
+        $secondary = null;
         try{
             //para sincronizacion completa
             $actas_locales = Acta::with('requisiciones.insumos','requisiciones.insumosClues','entradas.stock')->where('estatus','>',1)->where('estatus_sincronizacion',0)
-                                    ->orderBy('fecha_pedido')->orderBy('numero')->get();
+                                    ->orderBy('fecha_pedido')->orderBy('numero')->orderBy('numero_alt')->get();
 
             $default = DB::getPdo(); // Default conn
             $secondary = DB::connection('mysql_sync')->getPdo();
@@ -375,18 +377,26 @@ trait SyncTrait{
                 }
             }
 
-            $actas_centrales = Acta::orderBy('fecha_pedido')->orderBy('numero')->get();
+            $actas_centrales = Acta::orderBy('fecha_pedido')->orderBy('numero')->orderBy('numero_alt')->get();
             $oficios_actas = [];
             $oficio_activo = 0;
             for ($index = 0, $total_actas = count($actas_centrales); $index < $total_actas ; $index++) {
                 $acta = $actas_centrales[$index];
                 if($acta->num_oficio){
                     if(isset($oficios_actas[$oficio_activo])){
-                        if(count($oficios_actas[$oficio_activo]['actas'])){
-                            $oficios_actas[$oficio_activo]['gap'] = true;
+                        if($oficio_activo != $acta->num_oficio){
+                            if(count($oficios_actas[$oficio_activo]['actas'])){
+                                $oficios_actas[$oficio_activo]['gap'] = true;
+                            }
                         }
                     }
-                    $oficios_actas[$acta->num_oficio] = ['actas'=>[],'gap'=>false];
+
+                    if(!isset($oficios_actas[$acta->num_oficio])){
+                        $oficios_actas[$acta->num_oficio] = ['actas'=>[],'gap'=>false,'num_oficio_alt'=>0];
+                    }else{
+                        $oficios_actas[$acta->num_oficio]['num_oficio_alt'] = $acta->num_oficio_alt;
+                    }
+                    //$oficios_actas[$acta->num_oficio] = ['actas'=>[],'gap'=>false];
                     $oficio_activo = $acta->num_oficio;
                 }else{
                     $oficios_actas[$oficio_activo]['actas'][] = $acta;
@@ -407,7 +417,11 @@ trait SyncTrait{
                         $acta->num_oficio = $num_oficio;
                         $acta->num_oficio_pedido = $num_oficio;
                         if($num_oficio_alt){
-                            $acta->num_oficio_alt = $num_oficio_alt;
+                            if($item['num_oficio_alt']){
+                                $acta->num_oficio_alt = $item['num_oficio_alt'] . '-' . $num_oficio_alt;
+                            }else{
+                                $acta->num_oficio_alt = $num_oficio_alt;
+                            }
                             $num_oficio_alt++;
                         }else{
                             $num_oficio++;

@@ -609,32 +609,76 @@ class ActaController extends Controller
                 $query->orderBy('tipo_requisicion');
             }])->orderBy('clues')->orderBy('fecha')->orderBy('hora_termino')->get(); //->where('estatus','>',1)->whereNull('numero')->where('estatus_sincronizacion',0)
 
-            $folios_clues = []; //clues => ['folio'=>1,'alt'=>[{1},{2},{3},{4}],'gap'=>true/false]
+
+            #B::table('actas_arregladas')->get();
+            #return Response::json(['data'=>$actas], 200);
+
+            $folios_clues = []; //clues => ['folio'=>1,'alt'=>[{1},{2},{3},{4}],'gap'=>true/false,'num_alt_max'=>0]
             $max_requisicion_clues = [];
+            $max_requisiciones_alt_clues = [];
             //$numeros_requisiciones_clues = [];
             $folio_anterior = [];
+            $folio_alt_anterior = [];
 
             foreach ($actas as $acta){
                 $clues = $acta->clues;
                 if(!isset($folios_clues[$clues])){
                     $folios_clues[$clues] = [];
                     $max_requisicion_clues[$clues] = 0;
+                    $max_requisiciones_alt_clues[$clues] = [];
                 }
 
                 if($acta->numero){
                     if(isset($folio_anterior[$clues])){
-                        if(count($folios_clues[$clues][$folio_anterior[$clues]]['actas'])){
-                            $folios_clues[$clues][$folio_anterior[$clues]]['gap'] = true;
+                        if($folio_anterior[$clues] != $acta->numero){
+                            if(count($folios_clues[$clues][$folio_anterior[$clues]]['actas'])){
+                                $folios_clues[$clues][$folio_anterior[$clues]]['gap'] = true;
+                                //$folios_clues[$clues][$folio_anterior[$clues]]['num_alt_max'] = $acta->numero_alt;
+                            }
                         }
                     }
+
+                    if(!isset($folio_alt_anterior[$clues])){
+                        //$folio_alt_anterior[$clues] = null;
+                        $folio_alt_anterior[$clues] = [];
+                    }
+
+                    if(!isset($folio_alt_anterior[$clues][$acta->numero])){
+                        $folio_alt_anterior[$clues][$acta->numero] = null;
+                    }
+                    
                     $folio_anterior[$clues] = $acta->numero;
+                    if($acta->numero_alt){
+                        $folio_alt_anterior[$clues][$acta->numero] = $acta->numero_alt;
+                    }
+                    
+                    $max_numero_requisicion = $acta->requisiciones()->max('numero');
+                    if($max_numero_requisicion > $max_requisicion_clues[$clues]){
+                        $max_requisicion_clues[$clues] = $max_numero_requisicion;
+                    }
+
+                    if(!isset($max_requisiciones_alt_clues[$clues][$max_numero_requisicion])){
+                        $max_requisiciones_alt_clues[$clues][$max_numero_requisicion] = 0;
+                    }
+
+                    $max_numero_alt_requisicion = $acta->requisiciones()->max('numero_alt');
+                    
+                    if($max_numero_alt_requisicion > $max_requisiciones_alt_clues[$clues][$max_numero_requisicion]){
+                        $max_requisiciones_alt_clues[$clues][$max_numero_requisicion] = $max_numero_alt_requisicion;
+                    }
                     
                     if(!isset($folios_clues[$clues][$acta->numero])){
-                        $max_numero_requisicion = $acta->requisiciones()->max('numero');
-                        if($max_numero_requisicion > $max_requisicion_clues[$clues]){
-                            $max_requisicion_clues[$clues] = $max_numero_requisicion;
+                        $folios_clues[$clues][$acta->numero] = ['actas'=>[],'gap'=>false,'max_requisicion'=>$max_numero_requisicion,'max_alt_requisicion'=>$max_numero_alt_requisicion];
+                    }else{
+                        if(count($folios_clues[$clues][$acta->numero]['actas'])){
+                            foreach($folios_clues[$clues][$acta->numero]['actas'] as $index => $actas_alternas){
+                                if(!$actas_alternas->numero_alt){
+                                    $folios_clues[$clues][$acta->numero]['actas'][$index]->numero_alt = $acta->numero_alt;
+                                }
+                            }
                         }
-                        $folios_clues[$clues][$acta->numero] = ['actas'=>[],'gap'=>false,'max_requisicion'=>$max_numero_requisicion];
+                        $folios_clues[$clues][$acta->numero]['max_requisicion'] = $max_numero_requisicion;
+                        $folios_clues[$clues][$acta->numero]['max_alt_requisicion'] = $max_requisiciones_alt_clues[$clues][$max_numero_requisicion]; //$max_numero_alt_requisicion;
                     }
                 }else{
                     if(!isset($folio_anterior[$clues])){
@@ -644,30 +688,34 @@ class ActaController extends Controller
                         }
                         $folios_clues[$clues]["-1"]['actas'][] = $acta;
                     }else{
+                        if(isset($folio_alt_anterior[$clues][$folio_anterior[$clues]])){
+                            $acta->numero_alt = $folio_alt_anterior[$clues][$folio_anterior[$clues]];
+                        }
                         $folios_clues[$clues][$folio_anterior[$clues]]['actas'][] = $acta;
                     }
                 }
             }
+            //return Response::json(['data'=>$folios_clues,'folios_alt'=>$folio_alt_anterior], 200);
 
             //$guardar_actas = [];
             foreach($folios_clues as $clues){
                 foreach($clues as $numero => $item){
                     if(count($item['actas'])){
-                        if($numero == "-1" && $item['gap']){
+                        if($numero == "-1" && $item['gap']){ //Se encontraron actas con fechas posteriores a la primer acta de la clues, le corresponde el numero de folio 1
                             $numero_acta = 1;
                             $numero_alt = 1;
                             $numero_requisicion = intval($clues[$numero_acta]['max_requisicion']);
                             $numero_requisicion_alt = 1;
-                        }else if($numero == "-1" && !$item['gap']){
+                        }else if($numero == "-1" && !$item['gap']){ //No hay actas capturadas de la clues, empezamos del 1 sin numeros_alt
                             $numero_acta = 1;
                             $numero_alt = false;
                             $numero_requisicion = 1;
                             $numero_requisicion_alt = false;
                         }else if($item['gap']){
                             if(isset($clues["-1"])){
-                                $numero_alt = count($clues["-1"]['actas'])+1;
+                                $numero_alt = count($clues["-1"]['actas'])+1; //si hubo actas antes de esta, se continua con la numeración alterna
                             }else{
-                                $numero_alt = 1;
+                                $numero_alt = 1; //Si no hubo actas antes se empieza del alt 1
                             }
                             $numero_acta = intval($numero);
                             $numero_requisicion = intval($item['max_requisicion']);
@@ -679,23 +727,49 @@ class ActaController extends Controller
                             $numero_requisicion_alt = false;
                         }
 
+                        $numero_alt_anterior = '';
                         foreach($item['actas'] as $acta){
                             $acta->numero = $numero_acta;
                             if($numero_alt){
-                                $acta->numero_alt = $numero_alt;
-                                $acta->folio = $acta->clues . '/'.str_pad($numero_acta, 2, "0", STR_PAD_LEFT).'-'.$numero_alt.'/2016';
-                                $numero_alt++;
+                                if(!$acta->numero_alt){
+                                    $acta->numero_alt = $numero_alt;
+                                    $acta->folio = $acta->clues . '/'.str_pad($numero_acta, 2, "0", STR_PAD_LEFT).'-'.$numero_alt.'/2016';
+                                    $numero_alt++;
+                                }else{
+                                    if($numero_alt_anterior != $acta->numero_alt){
+                                        $numero_alt_anterior = $acta->numero_alt;
+                                        $numero_alt_alt = 1;
+                                    }
+                                    $acta->numero_alt = $acta->numero_alt . '-' . $numero_alt_alt;
+                                    $acta->folio = $acta->clues . '/'.str_pad($numero_acta, 2, "0", STR_PAD_LEFT).'-'.$acta->numero_alt.'/2016';
+                                    $numero_alt_alt++;
+                                }
                             }else{
                                 $acta->folio = $acta->clues . '/'.str_pad($numero_acta, 2, "0", STR_PAD_LEFT).'/2016';
                                 $numero_acta++;
                             }
                             $acta->save();
 
+                            $numero_req_alt_anterior = '';
                             foreach($acta->requisiciones as $requisicion){
                                 $requisicion->numero = $numero_requisicion;
                                 if($numero_requisicion_alt){
-                                    $requisicion->numero_alt = $numero_requisicion_alt;
-                                    $numero_requisicion_alt++;
+                                    if($clues[$numero_acta]['max_alt_requisicion']){
+                                        $requisicion->numero_alt = $clues[$numero_acta]['max_alt_requisicion'] . '-' . $numero_requisicion_alt;
+                                        $numero_requisicion_alt++;
+                                    }else{
+                                        $requisicion->numero_alt = $numero_requisicion_alt;
+                                        $numero_requisicion_alt++;
+                                    }
+                                    //if(!$requisicion->numero_alt){
+                                    /*}else{
+                                        if($numero_req_alt_anterior != $requisicion->numero_alt){
+                                            $numero_req_alt_anterior = $requisicion->numero_alt;
+                                            $numero_req_alt_alt = 1;
+                                        }
+                                        $requisicion->numero_alt = $requisicion->numero_alt . '-' . $numero_req_alt_alt;
+                                        $numero_req_alt_alt++;
+                                    }*/
                                 }else{
                                     $numero_requisicion++;
                                 }
